@@ -11,7 +11,33 @@ export class Commands {
             vscode.commands.registerCommand("observable-kit.createNotebook", Commands.createNotebook),
             vscode.commands.registerCommand("observable-kit.convertFromLegacy", Commands.convertFromLegacy),
             vscode.commands.registerCommand("observable-kit.setupWorkspace", Commands.setupWorkspace),
+            vscode.commands.registerCommand("observable-kit.cell.pin", Commands.pinCell),
+            vscode.commands.registerCommand("observable-kit.cell.unpin", Commands.unpinCell),
         );
+
+        // Handle cell selection changes to update pin context
+        ctx.subscriptions.push(
+            vscode.window.onDidChangeNotebookEditorSelection(e => {
+                Commands.updatePinContext(e.notebookEditor);
+            })
+        );
+
+        // Handle when a different notebook becomes active
+        ctx.subscriptions.push(
+            vscode.window.onDidChangeActiveNotebookEditor(e => {
+                if (e) {
+                    Commands.updatePinContext(e);
+                }
+            })
+        );
+    }
+
+    private static updatePinContext(editor: vscode.NotebookEditor): void {
+        if (editor.notebook.notebookType === "onb-notebook-kit" && editor.selections.length > 0) {
+            const cell = editor.notebook.cellAt(editor.selections[0].start);
+            const isPinned = cell.metadata?.pinned === true;
+            vscode.commands.executeCommand("setContext", "observable-kit.currentCellPinned", isPinned);
+        }
     }
 
     static async preview(uri?: vscode.Uri): Promise<void> {
@@ -334,6 +360,42 @@ export class Commands {
 
         html += "</notebook>\n";
         return html;
+    }
+
+    static async pinCell(cell: vscode.NotebookCell): Promise<void> {
+        if (!cell) {
+            return;
+        }
+
+        const edit = new vscode.WorkspaceEdit();
+        // Ensure pinned is explicitly boolean true
+        const newMetadata = { ...cell.metadata, pinned: true };
+        edit.set(cell.notebook.uri, [
+            vscode.NotebookEdit.updateCellMetadata(cell.index, newMetadata)
+        ]);
+
+        await vscode.workspace.applyEdit(edit);
+
+        // Update our custom context immediately
+        await vscode.commands.executeCommand("setContext", "observable-kit.currentCellPinned", true);
+    }
+
+    static async unpinCell(cell: vscode.NotebookCell): Promise<void> {
+        if (!cell) {
+            return;
+        }
+
+        const edit = new vscode.WorkspaceEdit();
+        // Set pinned to false instead of removing it to ensure proper context evaluation
+        const newMetadata = { ...cell.metadata, pinned: false };
+        edit.set(cell.notebook.uri, [
+            vscode.NotebookEdit.updateCellMetadata(cell.index, newMetadata)
+        ]);
+
+        await vscode.workspace.applyEdit(edit);
+
+        // Update our custom context immediately
+        await vscode.commands.executeCommand("setContext", "observable-kit.currentCellPinned", false);
     }
 
 }

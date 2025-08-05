@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import { TextDecoder, TextEncoder } from "util";
 import { deserialize, serialize, type Notebook, type Cell } from "@observablehq/notebook-kit";
-import { DOMParser, DOMImplementation } from "@xmldom/xmldom";
+import { DOMParser } from "./dom-polyfill";
 import { selectOne, selectAll } from "css-select";
+import { OBSERVABLE_TO_VSCODE_MODE_MAP, VSCODE_TO_OBSERVABLE_MODE_MAP } from "../common/types";
 
 // Adapter to make xmldom nodes compatible with css-select
 const xmldomAdapter = {
@@ -88,60 +89,6 @@ class DOMParserEx extends DOMParser {
     }
 }
 
-if (!globalThis.document) {
-    // @ts-expect-error
-    globalThis.document = new DOMImplementation().createHTMLDocument();
-    const origCreateElement = document.createElement;
-    document.createElement = function (name: string) {
-        const element = origCreateElement.call(this, name);
-
-        // Add innerHTML property getter
-        Object.defineProperty(element, "innerHTML", {
-            get: function () {
-                // Return the serialized HTML content of all child nodes
-                let html = "";
-                for (let i = 0; i < this.childNodes.length; i++) {
-                    const child = this.childNodes[i];
-                    if (child.nodeType === 1) { // Element node
-                        html += child.toString();
-                    } else if (child.nodeType === 3) { // Text node
-                        html += child.nodeValue || "";
-                    }
-                }
-                return html;
-            },
-            configurable: true,
-            enumerable: true
-        });
-
-        return element;
-    };
-}
-
-// Mapping between VS Code language IDs and Observable Kit modes
-export const VSCODE_TO_OBSERVABLE_MODE_MAP: Record<string, Cell["mode"]> = {
-    "markdown": "md",
-    "javascript": "js",
-    "ojs": "ojs",
-    "html": "html",
-    "css": "html", // CSS is treated as HTML in Observable Kit
-    "tex": "tex",
-    "sql": "sql",
-    "dot": "dot"
-};
-
-const OBSERVABLE_TO_VSCODE_MODE_MAP: Record<Cell["mode"], string> = {
-    "md": "markdown",
-    "js": "javascript",
-    "ojs": "ojs",
-    "html": "html",
-    "tex": "tex",
-    "sql": "sql",
-    "dot": "dot"
-};
-
-export const OBSERVABLE_KIT_MIME = "application/observable-kit+json";
-
 let serializer: NotebookKitSerializer;
 
 export class NotebookKitSerializer implements vscode.NotebookSerializer {
@@ -163,12 +110,8 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
         token: vscode.CancellationToken
     ): Promise<vscode.NotebookData> {
         const contentStr = this._textDecoder.decode(content);
-
-        // Detect format - Observable Kit HTML or legacy VSCode XML
         if (this.isObservableKitFormat(contentStr)) {
-            return this.deserializeObservableKitFormat(contentStr);
-        } else {
-            return this.deserializeVSCodeFormat(contentStr);
+            return this.deserializeObservableKitNotebook(contentStr);
         }
     }
 
@@ -185,8 +128,7 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
         return content.includes("<notebook") && content.includes("<!doctype html>");
     }
 
-    private deserializeObservableKitFormat(content: string): vscode.NotebookData {
-        // Use the official Observable Kit deserialize function with xmldom parser
+    private deserializeObservableKitNotebook(content: string): vscode.NotebookData {
         const parser = new DOMParserEx();
 
         const notebook: Notebook = deserialize(content, { parser: parser as any });
@@ -205,53 +147,19 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
                 language
             );
 
-            cellData.metadata = {
-                id: cell.id.toString(),
-                pinned: cell.pinned,
-                originalMode: cell.mode
-            };
-
+            // Ensure pinned property is explicitly boolean
+            const metadata = { ...cell };
+            if (metadata.pinned === undefined || metadata.pinned === null) {
+                metadata.pinned = false;
+            }
+            cellData.metadata = metadata;
             cells.push(cellData);
         }
 
         const notebookData = new vscode.NotebookData(cells);
-        notebookData.metadata = {
-            title: notebook.title,
-            theme: notebook.theme,
-            readOnly: notebook.readOnly
-        };
+        notebookData.metadata = notebook;
 
         return notebookData;
-    }
-
-    private deserializeVSCodeFormat(content: string): vscode.NotebookData {
-        // Parse legacy VSCode XML format
-        const cells: vscode.NotebookCellData[] = [];
-        const cellRegex = /<VSCode\.Cell(?:\s+id="([^"]*)")?(?:\s+language="([^"]*)")?>([^]*?)<\/VSCode\.Cell>/g;
-
-        let match;
-        while ((match = cellRegex.exec(content)) !== null) {
-            const [, id, language, cellContent] = match;
-            const trimmedContent = cellContent.trim();
-
-            const cellKind = language === "markdown"
-                ? vscode.NotebookCellKind.Markup
-                : vscode.NotebookCellKind.Code;
-
-            const cellData = new vscode.NotebookCellData(
-                cellKind,
-                trimmedContent,
-                language || "javascript"
-            );
-
-            if (id) {
-                cellData.metadata = { id };
-            }
-
-            cells.push(cellData);
-        }
-
-        return new vscode.NotebookData(cells);
     }
 
     private serializeToObservableKitFormat(data: vscode.NotebookData): string {
@@ -262,9 +170,7 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
         for (const cell of data.cells) {
             const cellId = cell.metadata?.id ? parseInt(cell.metadata.id) : cellIdCounter++;
             const mode = VSCODE_TO_OBSERVABLE_MODE_MAP[cell.languageId] || "js";
-            const pinned = cell.metadata?.pinned !== undefined
-                ? cell.metadata.pinned
-                : (mode === "js" || mode === "ojs"); // Default pinned behavior from Observable Kit
+            const pinned = cell.metadata?.pinned ?? false;
 
             cells.push({
                 id: cellId,
@@ -285,15 +191,4 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
         return serialize(notebook);
     }
 
-    private mapObservableKitTypeToLanguage(type: string): string {
-        // This method is kept for backward compatibility with VSCode format
-        const mapping: { [key: string]: string } = {
-            "text/markdown": "markdown",
-            "module": "javascript",
-            "observablejs": "ojs",
-            "text/html": "html",
-            "text/css": "css"
-        };
-        return mapping[type] || "javascript";
-    }
 }

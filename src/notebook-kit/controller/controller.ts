@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { OBSERVABLE_KIT_MIME, VSCODE_TO_OBSERVABLE_MODE_MAP } from "./serializer";
+import { OBSERVABLE_KIT_MIME, VSCODE_TO_OBSERVABLE_MODE_MAP } from "../common/types";
 import { maybeParseJavaScript, transpile } from "@observablehq/notebook-kit";
 
 export class NotebookKitController {
@@ -78,7 +78,7 @@ export class NotebookKitController {
         notebook: vscode.NotebookDocument
     ): Promise<vscode.NotebookCellOutput | undefined> {
         const cellText = cell.document.getText();
-        const tjs = transpile(cellText, cell.metadata.originalMode);
+        const tjs = transpile(cellText, cell.metadata.mode);
         const parsed = maybeParseJavaScript(tjs.body);
         const outputData = {
             metadata: cell.metadata,

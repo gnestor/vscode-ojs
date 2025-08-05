@@ -1,15 +1,21 @@
 <!doctype html>
-<notebook>
+<notebook theme="air" xmlns="http://www.w3.org/1999/xhtml">
   <title>World tour</title>
   <script id="1" type="text/markdown">
     # World tour
 
     This animation uses [d3.geoInterpolate](https://d3js.org/d3-geo/math#geoInterpolate) to interpolate a path along great arcs, and [spherical linear interpolation](https://en.wikipedia.org/wiki/Slerp) to rotate the [orthographic](./orthographic) projection.
   </script>
-  <script id="2" type="text/html">
+  <script id="2" type="text/markdown">
+    # Unpinned
+  </script>
+  <script id="3" type="text/markdown">
+    # Pinned
+  </script>
+  <script id="4" type="text/html">
     <b style="display: block; text-align:center; line-height: 33px;">${country?.properties.name ?? "\xa0"}
   </script>
-  <script id="3" type="module" pinned="">
+  <script id="5" type="module">
     // Expose the current country to display above the map.
     const country = Mutable(null);
 
@@ -26,7 +32,7 @@
     display(canvas);
 
     // Create a projection and a path generator.
-    const projection = d3.geoOrthographic().fitExtent([[10, 10], [width - 10, height - 10]], {type: "Sphere"});
+    const projection = d3.geoOrthographic().fitExtent([[10, 10], [width - 10, height - 10]], { type: "Sphere" });
     const path = d3.geoPath(projection, context);
     const tilt = 20;
 
@@ -35,7 +41,7 @@
       context.beginPath(), path(land), context.fillStyle = "#ccc", context.fill();
       context.beginPath(), path(country), context.fillStyle = "#f00", context.fill();
       context.beginPath(), path(borders), context.strokeStyle = "#fff", context.lineWidth = 0.5, context.stroke();
-      context.beginPath(), path({type: "Sphere"}), context.strokeStyle = "#000", context.lineWidth = 1.5, context.stroke();
+      context.beginPath(), path({ type: "Sphere" }), context.strokeStyle = "#000", context.lineWidth = 1.5, context.stroke();
       context.beginPath(), path(arc), context.stroke();
     }
 
@@ -50,26 +56,26 @@
         const iv = Versor.interpolateAngles(r1, r2);
 
         await d3.transition()
-            .duration(1250)
-            .tween("render", () => (t) => {
-              projection.rotate(iv(t));
-              render(c, {type: "LineString", coordinates: [p1, ip(t)]});
-            })
+          .duration(1250)
+          .tween("render", () => (t) => {
+            projection.rotate(iv(t));
+            render(c, { type: "LineString", coordinates: [p1, ip(t)] });
+          })
           .transition()
-            .tween("render", () => (t) => {
-              render(c, {type: "LineString", coordinates: [ip(t), p2]});
-            })
+          .tween("render", () => (t) => {
+            render(c, { type: "LineString", coordinates: [ip(t), p2] });
+          })
           .end();
       }
     })();
   </script>
-  <script id="5" type="module" pinned="">
+  <script id="6" type="module">
     const world = await FileAttachment("data/countries-110m.json").json();
     const countries = topojson.feature(world, world.objects.countries).features;
     const borders = topojson.mesh(world, world.objects.countries, (a, b) => a !== b);
     const land = topojson.feature(world, world.objects.land);
   </script>
-  <script id="4" type="module" pinned="">
+  <script id="7" type="module">
     class Versor {
       static fromAngles([l, p, g]) {
         l *= Math.PI / 360;

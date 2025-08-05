@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import * as path from "path";
 
 /**
  * Service that detects if HTML files are Observable notebooks and handles opening them appropriately
@@ -55,7 +54,6 @@ export class HTMLNotebookDetector {
             // Small delay to ensure VS Code has finished processing the document
             await new Promise(resolve => setTimeout(resolve, 50));
             await vscode.commands.executeCommand("setContext", "observable-kit.isObservableNotebook", isObservableNotebook);
-            console.log(`Set observable-kit.isObservableNotebook context to: ${isObservableNotebook}`);
         } catch (error) {
             console.error("Failed to set context:", error);
         }
@@ -241,8 +239,6 @@ export class HTMLNotebookDetector {
             try {
                 const content = document.getText();
                 const isObservableNotebook = this.isObservableNotebook(content);
-
-                console.log(`Checking HTML file: ${document.uri.fsPath}, isObservableNotebook: ${isObservableNotebook}`);
 
                 // Set context key for VS Code UI
                 await this.setContext(isObservableNotebook);

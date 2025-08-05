@@ -5,6 +5,7 @@ import type { Expression, Program } from "acorn";
 import type { JavaScriptCell, TranspiledJavaScript } from "@observablehq/notebook-kit";
 
 import "@observablehq/notebook-kit/index.css";
+import { NotebookCell } from "../util/types";
 
 const stateById = new Map<string, DefineState>();
 
@@ -104,7 +105,7 @@ function constructFunction(parsed: JavaScriptCell | Program | Expression, js: st
             return evil(`(${funcString})`);
         }
     }
-    return constructFunction(body, js);
+    return constructFunction(body as any, js);
 
 }
 
@@ -252,8 +253,7 @@ export const activate: ActivationFunction = context => {
     return {
         renderOutputItem(outputItem, element) {
             try {
-
-                const data = outputItem.json();
+                const data: NotebookCell = outputItem.json();
 
                 // Handle both data structures - initial load vs execution
                 let cellId: string;
