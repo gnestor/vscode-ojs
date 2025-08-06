@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
-import { OBSERVABLE_KIT_MIME, VSCODE_TO_OBSERVABLE_MODE_MAP } from "../common/types";
 import { maybeParseJavaScript, transpile } from "@observablehq/notebook-kit";
+import { OBSERVABLE_KIT_MIME, vscode2observable } from "../common/types";
 
 export class NotebookKitController {
     readonly controllerId = "observable-kit-kernel";
     readonly notebookType = "onb-notebook-kit";
     readonly label = "Observable Notebook Kit";
-    readonly supportedLanguages = Object.keys(VSCODE_TO_OBSERVABLE_MODE_MAP);
+    readonly supportedLanguages = Object.keys(vscode2observable);
 
     private readonly _controller: vscode.NotebookController;
     private _executionOrder = 0;

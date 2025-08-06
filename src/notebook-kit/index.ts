@@ -1,12 +1,13 @@
-import * as vscode from "vscode";
+import { ExtensionContext, WebviewPanel, workspace, window } from "vscode";
 import { NotebookKitController } from "./controller/controller";
 import { NotebookKitSerializer } from "./controller/serializer";
-import { Commands } from "./controller/commands";
+import { Commands } from "./commands";
+import { HtmlPreview } from "./htmlPreview";
 
-export function activate(ctx: vscode.ExtensionContext) {
+export function activate(ctx: ExtensionContext) {
     // Register the notebook serializer for Observable Notebook Kit format
     ctx.subscriptions.push(
-        vscode.workspace.registerNotebookSerializer(
+        workspace.registerNotebookSerializer(
             "onb-notebook-kit",
             NotebookKitSerializer.attach(),
             {
@@ -21,4 +22,10 @@ export function activate(ctx: vscode.ExtensionContext) {
 
     // Register commands
     Commands.attach(ctx);
+
+    window.registerWebviewPanelSerializer(HtmlPreview.viewType, {
+        async deserializeWebviewPanel(webviewPanel: WebviewPanel) {
+            HtmlPreview.revive(webviewPanel, ctx);
+        }
+    });
 }

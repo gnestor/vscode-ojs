@@ -84,6 +84,7 @@ Promise.all([
     main(tsconfigNode, "./src/extension.ts", "node", "cjs"),
     main(tsconfigBrowser, "./src/notebook/renderers/ojsRenderer.ts", "browser", "esm"),
     main(tsconfigBrowser, "./src/notebook-kit/renderers/observable-kit-renderer.ts", "browser", "esm", [], "observable-kit-renderer"),
+    main(tsconfigBrowser, "./src/notebook-kit/htmlTranspiler.ts", "browser", "esm", [], "html-transpiler"),
     main(tsconfigBrowser, "./src/webview.ts", "browser", "iife")
 ]).catch((e) => {
     console.error(e);

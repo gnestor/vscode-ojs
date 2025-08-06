@@ -1,18 +1,23 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
+import { HtmlPreview } from "./htmlPreview";
 
 export class Commands {
 
+    private static _ctx: vscode.ExtensionContext;
+
     static attach(ctx: vscode.ExtensionContext) {
+        Commands._ctx = ctx;
         ctx.subscriptions.push(
-            vscode.commands.registerCommand("observable-kit.preview", Commands.preview),
             vscode.commands.registerCommand("observable-kit.build", Commands.build),
             vscode.commands.registerCommand("observable-kit.createNotebook", Commands.createNotebook),
             vscode.commands.registerCommand("observable-kit.convertFromLegacy", Commands.convertFromLegacy),
             vscode.commands.registerCommand("observable-kit.setupWorkspace", Commands.setupWorkspace),
             vscode.commands.registerCommand("observable-kit.cell.pin", Commands.pinCell),
             vscode.commands.registerCommand("observable-kit.cell.unpin", Commands.unpinCell),
+            vscode.commands.registerCommand("observable-kit.preview", Commands.preview),
+            vscode.commands.registerCommand("observable-kit.configure-transpiler", Commands.configureTranspiler),
         );
 
         // Handle cell selection changes to update pin context
@@ -37,51 +42,6 @@ export class Commands {
             const cell = editor.notebook.cellAt(editor.selections[0].start);
             const isPinned = cell.metadata?.pinned === true;
             vscode.commands.executeCommand("setContext", "observable-kit.currentCellPinned", isPinned);
-        }
-    }
-
-    static async preview(uri?: vscode.Uri): Promise<void> {
-        const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
-
-        if (!targetUri) {
-            vscode.window.showErrorMessage("No file selected for preview");
-            return;
-        }
-
-        const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
-        if (!workspaceFolder) {
-            vscode.window.showErrorMessage("File must be in a workspace to preview");
-            return;
-        }
-
-        try {
-            // Check if @observablehq/notebook-kit is installed
-            const hasNotebookKit = await Commands.checkNotebookKitInstallation(workspaceFolder);
-
-            if (!hasNotebookKit) {
-                const install = await vscode.window.showInformationMessage(
-                    "Observable Notebook Kit is not installed. Install it now?",
-                    "Install", "Cancel"
-                );
-
-                if (install === "Install") {
-                    await Commands.installNotebookKit(workspaceFolder);
-                } else {
-                    return;
-                }
-            }
-
-            // Run preview command
-            const terminal = vscode.window.createTerminal({
-                name: "Observable Kit Preview",
-                cwd: workspaceFolder.uri.fsPath
-            });
-
-            terminal.sendText(`npx notebooks preview --root ${path.dirname(targetUri.fsPath)}`);
-            terminal.show();
-
-        } catch (error) {
-            vscode.window.showErrorMessage(`Preview failed: ${error}`);
         }
     }
 
@@ -393,9 +353,61 @@ export class Commands {
         ]);
 
         await vscode.workspace.applyEdit(edit);
-
-        // Update our custom context immediately
-        await vscode.commands.executeCommand("setContext", "observable-kit.currentCellPinned", false);
     }
 
+    // Update our custom context immediately
+    static async preview(fileUri?: vscode.Uri) {
+        let textDocument: vscode.TextDocument | undefined;
+        if (fileUri) {
+            textDocument = await vscode.workspace.openTextDocument(fileUri);
+        } else if (vscode.window.activeTextEditor) {
+            textDocument = vscode.window.activeTextEditor.document;
+        }
+        if (textDocument && Commands._ctx) {
+            await HtmlPreview.createOrShow(Commands._ctx, textDocument);
+        }
+    }
+
+    static async configureTranspiler() {
+        if (!HtmlPreview.currentPanel) {
+            vscode.window.showWarningMessage("No HTML preview is currently open. Please open a preview first.");
+            return;
+        }
+
+        const currentOptions = HtmlPreview.currentPanel.getTranspilerOptions();
+
+        const items = [
+            {
+                label: `Scripts: ${currentOptions.enableScripts ? 'Enabled' : 'Disabled'}`,
+                description: 'Toggle script processing',
+                option: 'enableScripts'
+            },
+            {
+                label: `Styles: ${currentOptions.enableStyles ? 'Enabled' : 'Disabled'}`,
+                description: 'Toggle style processing',
+                option: 'enableStyles'
+            },
+            {
+                label: `Comments: ${currentOptions.preserveComments ? 'Preserved' : 'Removed'}`,
+                description: 'Toggle comment preservation',
+                option: 'preserveComments'
+            }
+        ];
+
+        const selection = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select transpiler option to toggle',
+            canPickMany: false
+        });
+
+        if (selection) {
+            const optionKey = selection.option as keyof typeof currentOptions;
+            const newOptions = {
+                [optionKey]: !currentOptions[optionKey]
+            };
+
+            HtmlPreview.currentPanel.updateTranspilerOptions(newOptions);
+            vscode.window.showInformationMessage(`Transpiler ${selection.option} ${newOptions[optionKey] ? 'enabled' : 'disabled'}`);
+        }
+    }
 }
+

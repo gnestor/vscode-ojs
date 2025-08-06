@@ -1,9 +1,8 @@
 import * as vscode from "vscode";
 import { TextDecoder, TextEncoder } from "util";
 import { deserialize, serialize, type Notebook, type Cell } from "@observablehq/notebook-kit";
-import { DOMParser } from "./dom-polyfill";
-import { selectOne, selectAll } from "css-select";
-import { OBSERVABLE_TO_VSCODE_MODE_MAP, VSCODE_TO_OBSERVABLE_MODE_MAP } from "../common/types";
+import { observable2vscode, vscode2observable } from "../common/types";
+import { installMinimalDOMPolyfill } from "./dom-polyfill";
 
 // Adapter to make xmldom nodes compatible with css-select
 const xmldomAdapter = {
@@ -51,44 +50,6 @@ const xmldomAdapter = {
     }
 };
 
-class DOMParserEx extends DOMParser {
-    constructor() {
-        super();
-    }
-
-    parseFromString(data, contentType) {
-        const doc = super.parseFromString(data, contentType);
-        doc["querySelector"] = (selector: string) => {
-            try {
-                // Use css-select with our xmldom adapter to find the first matching element
-                // Start from the document element or the document itself
-                const rootElement = doc.documentElement || doc as any;
-                const result = selectOne(selector, rootElement, { adapter: xmldomAdapter });
-                return result || null;
-            } catch (error) {
-                console.error("Error in querySelector:", error);
-                return null;
-            }
-        };
-
-        doc["querySelectorAll"] = (selector: string) => {
-            try {
-                // Use css-select with our xmldom adapter to find all matching elements
-                // Start from the document element or the document itself
-                const rootElement = doc.documentElement || doc as any;
-                const results = selectAll(selector, rootElement, { adapter: xmldomAdapter });
-                // Return a NodeList-like array
-                return results;
-            } catch (error) {
-                console.error("Error in querySelectorAll:", error);
-                return [];
-            }
-        };
-
-        return doc;
-    }
-}
-
 let serializer: NotebookKitSerializer;
 
 export class NotebookKitSerializer implements vscode.NotebookSerializer {
@@ -102,6 +63,7 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
         if (!serializer) {
             serializer = new NotebookKitSerializer();
         }
+        installMinimalDOMPolyfill();
         return serializer;
     }
 
@@ -129,9 +91,8 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
     }
 
     private deserializeObservableKitNotebook(content: string): vscode.NotebookData {
-        const parser = new DOMParserEx();
 
-        const notebook: Notebook = deserialize(content, { parser: parser as any });
+        const notebook: Notebook = deserialize(content);
         const cells: vscode.NotebookCellData[] = [];
 
         for (const cell of notebook.cells) {
@@ -139,7 +100,7 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
                 ? vscode.NotebookCellKind.Markup
                 : vscode.NotebookCellKind.Code;
 
-            const language = OBSERVABLE_TO_VSCODE_MODE_MAP[cell.mode] || "javascript";
+            const language = observable2vscode[cell.mode] || "javascript";
 
             const cellData = new vscode.NotebookCellData(
                 cellKind,
@@ -169,7 +130,7 @@ export class NotebookKitSerializer implements vscode.NotebookSerializer {
 
         for (const cell of data.cells) {
             const cellId = cell.metadata?.id ? parseInt(cell.metadata.id) : cellIdCounter++;
-            const mode = VSCODE_TO_OBSERVABLE_MODE_MAP[cell.languageId] || "js";
+            const mode = vscode2observable[cell.languageId] || "js";
             const pinned = cell.metadata?.pinned ?? false;
 
             cells.push({

@@ -20,7 +20,8 @@
     "@observablehq/runtime",
     "@observablehq/inspector",
     "@observablehq/stdlib",
-    "@hpcc-js/observable-md"
+    "@observablehq/notebook-kit",
+    "@hpcc-js/observable-compiler"
   ],
   "main": "./dist/extension.js",
   "scripts": {
@@ -66,17 +67,14 @@
     "@types/node": "20.19.9",
     "@types/vscode": "1.102.0",
     "@types/vscode-notebook-renderer": "1.72.3",
-    "@types/xmldom": "^0.1.34",
     "@typescript-eslint/eslint-plugin": "8.38.0",
     "@typescript-eslint/parser": "8.38.0",
     "@vscode/extension-telemetry": "0.9.9",
     "@vscode/vsce": "3.6.0",
-    "@xmldom/xmldom": "^0.9.8",
     "acorn-walk": "8.3.4",
     "assert": "2.1.0",
     "browserify-zlib": "0.2.0",
     "buffer": "6.0.3",
-    "css-select": "6.0.0",
     "esbuild": "0.25.8",
     "esbuild-copy-static-files": "0.1.0",
     "esbuild-plugin-text-replace": "1.3.0",
@@ -112,7 +110,8 @@
     "onNotebook:ojs-notebook",
     "onNotebook:onb-notebook-kit",
     "onLanguage:html",
-    "onWebviewPanel:OJSPreview"
+    "onWebviewPanel:OJSPreview",
+    "onWebviewPanel:HTMLPreview"
   ],
   "contributes": {
     "languages": [
@@ -247,12 +246,6 @@
       },
       {
         "category": "Observable Kit",
-        "command": "observable-kit.preview",
-        "title": "Preview with Notebook Kit",
-        "description": "Preview notebook using Observable Notebook Kit"
-      },
-      {
-        "category": "Observable Kit",
         "command": "observable-kit.build",
         "title": "Build Static Site",
         "description": "Build static site using Notebook Kit"
@@ -280,6 +273,23 @@
         "command": "observable-kit.openHtmlAsNotebook",
         "title": "Open HTML as Observable Notebook",
         "description": "Open HTML file as Observable Notebook (without renaming)"
+      },
+      {
+        "category": "Observable Kit",
+        "command": "observable-kit.preview",
+        "title": "Preview Notebook",
+        "description": "Preview notebook in embedded webview",
+        "icon": {
+          "dark": "./images/preview-dark.svg",
+          "light": "./images/preview.svg"
+        }
+      },
+      {
+        "category": "Observable Kit",
+        "command": "observable-kit.configure-transpiler",
+        "title": "Configure HTML Transpiler",
+        "description": "Configure HTML transpiler options for preview",
+        "icon": "$(gear)"
       },
       {
         "category": "Observable Kit",
@@ -343,6 +353,10 @@
           "when": "resourceLangId == ojs || resourceLangId == omd"
         },
         {
+          "command": "observable-kit.preview",
+          "when": "resourceLangId == onb-notebook-kit"
+        },
+        {
           "command": "observable-kit.openHtmlAsNotebook",
           "when": "resourceLangId == html"
         },
@@ -402,8 +416,18 @@
         },
         {
           "when": "resourceLangId == html && observable-kit.isObservableNotebook",
+          "command": "observable-kit.preview",
+          "group": "navigation@998"
+        },
+        {
+          "when": "resourceLangId == html && observable-kit.isObservableNotebook",
           "command": "observable-kit.switchToNotebookView",
           "group": "navigation@999"
+        },
+        {
+          "when": "notebookType == onb-notebook-kit",
+          "command": "observable-kit.preview",
+          "group": "navigation@998"
         },
         {
           "when": "notebookType == onb-notebook-kit",

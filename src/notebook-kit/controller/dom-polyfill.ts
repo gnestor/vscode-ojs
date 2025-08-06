@@ -1,303 +1,325 @@
-import { DOMParser as DOMParserBase, DOMImplementation } from "@xmldom/xmldom";
-import { selectOne, selectAll } from "css-select";
-
 /**
- * DOM Polyfill for Node.js environment
- * 
- * Provides minimal DOM functionality required by @observablehq/notebook-kit
- * serialize.js, including:
- * - document.createElement()
- * - document.createTextNode()
- * - document.querySelector/querySelectorAll()
- * - Element properties: id, type, textContent, innerHTML, outerHTML
- * - Element methods: setAttribute, hasAttribute, appendChild
- * - DOMParser with querySelector support
+ * Simple Element implementation
  */
+class MockElement {
+    public tagName: string;
+    public attributes: Map<string, string> = new Map();
+    public childNodes: (MockElement | MockTextNode)[] = [];
+    private _textContent: string = "";
 
-/**
- * Enhanced element property handler for better DOM compatibility
- */
-function enhanceElement(element: any, tagName: string) {
-    const lowerTagName = tagName.toLowerCase();
-
-    // Properties that should sync with attributes for all elements
-    const syncProperties = ["id"];
-
-    // Additional properties for specific elements
-    if (lowerTagName === "script") {
-        syncProperties.push("type");
+    constructor(tagName: string) {
+        this.tagName = tagName.toLowerCase();
     }
 
-    // Set up property-attribute synchronization
-    syncProperties.forEach(prop => {
-        Object.defineProperty(element, prop, {
-            get: function () {
-                return this.getAttribute(prop) || "";
-            },
-            set: function (value) {
-                if (value != null) {
-                    this.setAttribute(prop, String(value));
-                } else {
-                    this.removeAttribute(prop);
-                }
-            },
-            configurable: true,
-            enumerable: true
-        });
-    });
-
-    // Add textContent property for better compatibility
-    if (!element.textContent && !Object.getOwnPropertyDescriptor(element, "textContent")) {
-        Object.defineProperty(element, "textContent", {
-            get: function () {
-                let text = "";
-                for (let i = 0; i < this.childNodes.length; i++) {
-                    const child = this.childNodes[i];
-                    if (child.nodeType === 3) { // Text node
-                        text += child.nodeValue || "";
-                    } else if (child.nodeType === 1) { // Element node
-                        text += child.textContent || "";
-                    }
-                }
-                return text;
-            },
-            set: function (value) {
-                // Clear all child nodes and add a single text node
-                while (this.firstChild) {
-                    this.removeChild(this.firstChild);
-                }
-                if (value != null) {
-                    this.appendChild(this.ownerDocument.createTextNode(String(value)));
-                }
-            },
-            configurable: true,
-            enumerable: true
-        });
+    get id(): string {
+        return this.getAttribute("id") || "";
     }
 
-    // Add innerHTML property getter (read-only for serialization)
-    Object.defineProperty(element, "innerHTML", {
-        get: function () {
-            let html = "";
-            for (let i = 0; i < this.childNodes.length; i++) {
-                const child = this.childNodes[i];
-                if (child.nodeType === 1) { // Element node
-                    html += child.toString();
-                } else if (child.nodeType === 3) { // Text node
-                    // Escape text content for HTML
-                    const text = child.nodeValue || "";
-                    html += text.replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;");
+    set id(value: string) {
+        this.setAttribute("id", value);
+    }
+
+    get type(): string {
+        return this.getAttribute("type") || "";
+    }
+
+    set type(value: string) {
+        this.setAttribute("type", value);
+    }
+
+    get textContent(): string {
+        if (this.childNodes.length === 0) {
+            return this._textContent;
+        }
+        return this.childNodes
+            .map(child => (child as any).textContent || (child as any).data || "")
+            .join("");
+    }
+
+    set textContent(value: string) {
+        this._textContent = value || "";
+        this.childNodes = [];
+    }
+
+    setAttribute(name: string, value: string): void {
+        this.attributes.set(name.toLowerCase(), value);
+    }
+
+    getAttribute(name: string): string | null {
+        return this.attributes.get(name.toLowerCase()) || null;
+    }
+
+    hasAttribute(name: string): boolean {
+        return this.attributes.has(name.toLowerCase());
+    }
+
+    removeAttribute(name: string): void {
+        this.attributes.delete(name.toLowerCase());
+    }
+
+    appendChild(child: MockElement | MockTextNode): void {
+        this.childNodes.push(child);
+    }
+
+    get innerHTML(): string {
+        return this.childNodes
+            .map(child => {
+                if (child instanceof MockElement) {
+                    return child.outerHTML;
                 }
-            }
-            return html;
-        },
-        configurable: true,
-        enumerable: false
-    });
+                // For text nodes, check if parent should escape content
+                const textData = (child as any).data || "";
+                return this.shouldEscapeTextContent() ? escapeHtml(textData) : textData;
+            })
+            .join("");
+    }
 
-    // Add outerHTML property getter
-    Object.defineProperty(element, "outerHTML", {
-        get: function () {
-            return this.toString();
-        },
-        configurable: true,
-        enumerable: false
-    });
+    get outerHTML(): string {
+        const attrs = Array.from(this.attributes.entries())
+            .map(([name, value]) => ` ${name}="${escapeAttr(value)}"`)
+            .join("");
 
-    return element;
+        const content = this.childNodes.length > 0
+            ? this.innerHTML
+            : this.shouldEscapeTextContent() ? escapeHtml(this._textContent) : this._textContent;
+
+        return `<${this.tagName}${attrs}>${content}</${this.tagName}>`;
+    }
+
+    private shouldEscapeTextContent(): boolean {
+        // Don't escape content for script tags and other tags that contain raw content
+        return this.tagName !== "script" && this.tagName !== "style";
+    }
+
+    querySelector(selector: string): MockElement | null {
+        return querySelector(this, selector);
+    }
+
+    querySelectorAll(selector: string): MockElement[] {
+        return querySelectorAll(this, selector);
+    }
 }
 
-if (!globalThis.document) {
-    // @ts-expect-error - Create HTML document for polyfill
-    globalThis.document = new DOMImplementation().createHTMLDocument();
+/**
+ * Simple TextNode implementation
+ */
+class MockTextNode {
+    public data: string;
+    public nodeType = 3; // TEXT_NODE
 
-    // Store original methods
-    const origCreateElement = document.createElement;
-    const origCreateTextNode = document.createTextNode;
+    constructor(data: string) {
+        this.data = data || "";
+    }
 
-    // Enhanced createElement
-    document.createElement = function (name: string) {
-        const element = origCreateElement.call(this, name);
-        return enhanceElement(element, name);
-    };
+    get textContent(): string {
+        return this.data;
+    }
 
-    // Enhanced createTextNode (ensure it works properly)
-    document.createTextNode = function (data: string) {
-        return origCreateTextNode.call(this, data || "");
-    };
-
-    // Add querySelector and querySelectorAll to document
-    document.querySelector = function (selector: string) {
-        try {
-            const result = selectOne(selector, this, { adapter: xmldomAdapter });
-            return result || null;
-        } catch (error) {
-            console.error("Error in document.querySelector:", error);
-            return null;
-        }
-    };
-
-    document.querySelectorAll = function (selector: string) {
-        try {
-            const results = selectAll(selector, this, { adapter: xmldomAdapter });
-            // Create a NodeList-like object with the required methods
-            const nodeList = Object.assign(results, {
-                item(index: number) {
-                    return results[index] || null;
-                },
-                forEach(callback: (value: any, index: number, list: any) => void, thisArg?: any) {
-                    for (let i = 0; i < results.length; i++) {
-                        callback.call(thisArg, results[i], i, results);
-                    }
-                }
-            });
-            return nodeList as any;
-        } catch (error) {
-            console.error("Error in document.querySelectorAll:", error);
-            const emptyList = Object.assign([], {
-                item: () => null,
-                forEach: () => { }
-            });
-            return emptyList as any;
-        }
-    };
+    set textContent(value: string) {
+        this.data = value || "";
+    }
 }
 
-// Adapter to make xmldom nodes compatible with css-select
-const xmldomAdapter = {
-    isTag: (node: any): node is Element => {
-        return node && node.nodeType === 1; // ELEMENT_NODE
-    },
+/**
+ * Simple Document implementation
+ */
+class MockDocument {
+    createElement(tagName: string): MockElement {
+        return new MockElement(tagName);
+    }
 
-    getAttributeValue: (elem: any, name: string): string | undefined => {
-        if (!elem || typeof elem.getAttribute !== "function") return undefined;
-        const value = elem.getAttribute(name);
-        return value === null ? undefined : value;
-    },
+    createTextNode(data: string): MockTextNode {
+        return new MockTextNode(data);
+    }
 
-    getChildren: (node: any): any[] => {
-        if (!node || !node.childNodes) return [];
-        const children = [];
-        for (let i = 0; i < node.childNodes.length; i++) {
-            const child = node.childNodes[i];
-            if (child.nodeType === 1) { // Only element nodes
-                children.push(child);
-            }
+    querySelector(selector: string): MockElement | null {
+        return null;
+    }
+
+    querySelectorAll(selector: string): MockElement[] {
+        return [];
+    }
+}
+
+/**
+ * Parsed document with querySelector support
+ */
+class MockParsedDocument {
+    private content: string;
+    private elements: MockElement[] = [];
+
+    constructor(content: string) {
+        this.content = content;
+        this.parseContent();
+    }
+
+    private parseContent(): void {
+        // Simple HTML parsing for the specific patterns used in serialize.js
+        // Parse the content to find nested elements like <notebook><title>...</title><script>...</script></notebook>
+
+        // First, find all top-level elements
+        const topLevelRegex = /<(\w+)([^>]*)>([\s\S]*?)<\/\1>/g;
+        let match;
+
+        while ((match = topLevelRegex.exec(this.content)) !== null) {
+            const [, tagName, attributesStr, innerHTML] = match;
+            const element = new MockElement(tagName);
+
+            // Parse attributes
+            this.parseAttributes(element, attributesStr);
+
+            // Parse the innerHTML for nested elements
+            this.parseInnerHTML(element, innerHTML);
+
+            this.elements.push(element);
         }
-        return children;
-    },
+    }
 
-    getName: (elem: any): string => {
-        return elem && elem.nodeName ? elem.nodeName.toLowerCase() : "";
-    },
-
-    getParent: (node: any): any | null => {
-        return node && node.parentNode ? node.parentNode : null;
-    },
-
-    getSiblings: (node: any): any[] => {
-        if (!node || !node.parentNode) return [node];
-        const siblings = [];
-        const parent = node.parentNode;
-        for (let i = 0; i < parent.childNodes.length; i++) {
-            const child = parent.childNodes[i];
-            if (child.nodeType === 1) { // Only element nodes
-                siblings.push(child);
-            }
+    private parseAttributes(element: MockElement, attributesStr: string): void {
+        const attrRegex = /(\w+)(?:="([^"]*)"|\s|$)/g;
+        let attrMatch;
+        while ((attrMatch = attrRegex.exec(attributesStr)) !== null) {
+            const [, name, value] = attrMatch;
+            element.setAttribute(name, value || "");
         }
-        return siblings;
-    },
+    }
 
-    getText: (node: any): string => {
-        if (!node) return "";
-        if (typeof node.textContent === "string") return node.textContent;
-        if (node.nodeType === 3) return node.nodeValue || ""; // Text node
+    private parseInnerHTML(parentElement: MockElement, innerHTML: string): void {
+        // Find child elements and text content
+        const childElementRegex = /<(\w+)([^>]*)>([\s\S]*?)<\/\1>/g;
+        let lastIndex = 0;
+        let childMatch;
 
-        // Fallback: collect text from all child text nodes
-        let text = "";
-        if (node.childNodes) {
-            for (let i = 0; i < node.childNodes.length; i++) {
-                const child = node.childNodes[i];
-                if (child.nodeType === 3) {
-                    text += child.nodeValue || "";
+        while ((childMatch = childElementRegex.exec(innerHTML)) !== null) {
+            const [fullMatch, tagName, attributesStr, content] = childMatch;
+            const matchStart = childMatch.index!;
+
+            // Add any text content before this element
+            if (matchStart > lastIndex) {
+                const textBefore = innerHTML.slice(lastIndex, matchStart).trim();
+                if (textBefore) {
+                    parentElement.appendChild(new MockTextNode(textBefore));
                 }
             }
+
+            // Create the child element
+            const childElement = new MockElement(tagName);
+            this.parseAttributes(childElement, attributesStr);
+            childElement.textContent = content.trim();
+            parentElement.appendChild(childElement);
+
+            lastIndex = matchStart + fullMatch.length;
         }
-        return text;
-    },
 
-    hasAttrib: (elem: any, name: string): boolean => {
-        if (!elem || typeof elem.hasAttribute !== "function") return false;
-        return elem.hasAttribute(name);
-    },
+        // Add any remaining text content
+        if (lastIndex < innerHTML.length) {
+            const remainingText = innerHTML.slice(lastIndex).trim();
+            if (remainingText) {
+                parentElement.appendChild(new MockTextNode(remainingText));
+            }
+        }
 
-    removeSubsets: (nodes: any[]): any[] => {
-        return nodes.filter((node, i) => {
-            return !nodes.some((other, j) => {
-                return i !== j && other && typeof other.contains === "function" && other.contains(node);
-            });
-        });
-    },
-
-    equals: (a: any, b: any): boolean => {
-        return a === b;
-    }
-};
-
-export class DOMParser extends DOMParserBase {
-    constructor() {
-        super();
+        // If no child elements were found, treat the entire innerHTML as text content
+        if (parentElement.childNodes.length === 0 && innerHTML.trim()) {
+            parentElement.textContent = innerHTML.trim();
+        }
     }
 
-    parseFromString(data: string, contentType: string) {
-        const doc = super.parseFromString(data, contentType);
+    querySelector(selector: string): MockElement | null {
+        return querySelector({ childNodes: this.elements } as any, selector);
+    }
 
-        // Add querySelector method to the parsed document
-        (doc as any).querySelector = (selector: string) => {
-            try {
-                // Use css-select with our xmldom adapter to find the first matching element
-                // Start from the document element or the document itself
-                const rootElement = doc.documentElement || doc as any;
-                const result = selectOne(selector, rootElement, { adapter: xmldomAdapter });
-                return result || null;
-            } catch (error) {
-                console.error("Error in querySelector:", error);
-                return null;
+    querySelectorAll(selector: string): MockElement[] {
+        return querySelectorAll({ childNodes: this.elements } as any, selector);
+    }
+}
+
+/**
+ * Simple DOMParser implementation
+ */
+class MockDOMParser {
+    parseFromString(data: string, contentType: string): MockParsedDocument {
+        return new MockParsedDocument(data);
+    }
+}
+
+/**
+ * Simple CSS selector implementation
+ * Only supports the basic selectors used in serialize.js:
+ * - Element selectors (e.g., "notebook", "title", "script")
+ * - Descendant selectors (e.g., "notebook script")
+ */
+function querySelector(root: { childNodes: (MockElement | MockTextNode)[] }, selector: string): MockElement | null {
+    const results = querySelectorAll(root, selector);
+    return results.length > 0 ? results[0] : null;
+}
+
+function querySelectorAll(root: { childNodes: (MockElement | MockTextNode)[] }, selector: string): MockElement[] {
+    const results: MockElement[] = [];
+
+    if (selector.includes(" ")) {
+        // Descendant selector (e.g., "notebook script")
+        const parts = selector.split(" ").filter(p => p.trim());
+        if (parts.length === 2) {
+            const [parent, child] = parts;
+            const parentElements = findElementsByTagName(root.childNodes || [], parent);
+            for (const parentEl of parentElements) {
+                results.push(...findElementsByTagName(parentEl.childNodes, child));
             }
-        };
+        }
+    } else {
+        // Simple element selector
+        results.push(...findElementsByTagName(root.childNodes || [], selector));
+    }
 
-        // Add querySelectorAll method to the parsed document
-        (doc as any).querySelectorAll = (selector: string) => {
-            try {
-                // Use css-select with our xmldom adapter to find all matching elements
-                // Start from the document element or the document itself
-                const rootElement = doc.documentElement || doc as any;
-                const results = selectAll(selector, rootElement, { adapter: xmldomAdapter });
-                // Create a NodeList-like object with the required methods
-                const nodeList = Object.assign(results, {
-                    item(index: number) {
-                        return results[index] || null;
-                    },
-                    forEach(callback: (value: any, index: number, list: any) => void, thisArg?: any) {
-                        for (let i = 0; i < results.length; i++) {
-                            callback.call(thisArg, results[i], i, results);
-                        }
-                    }
-                });
-                return nodeList;
-            } catch (error) {
-                console.error("Error in querySelectorAll:", error);
-                const emptyList = Object.assign([], {
-                    item: () => null,
-                    forEach: () => { }
-                });
-                return emptyList;
+    return results;
+}
+
+function findElementsByTagName(nodes: (MockElement | MockTextNode)[], tagName: string): MockElement[] {
+    const results: MockElement[] = [];
+
+    for (const node of nodes) {
+        if (node instanceof MockElement) {
+            if (node.tagName === tagName.toLowerCase()) {
+                results.push(node);
             }
-        };
+            // Recursively search children
+            results.push(...findElementsByTagName(node.childNodes, tagName));
+        }
+    }
 
-        return doc;
+    return results;
+}
+
+/**
+ * HTML escaping utilities
+ */
+function escapeHtml(text: string): string {
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function escapeAttr(text: string): string {
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+/**
+ * Install the polyfill
+ */
+export function installMinimalDOMPolyfill(): void {
+    if (!globalThis.document) {
+        globalThis.document = new MockDocument() as any;
+    }
+
+    if (!globalThis.DOMParser) {
+        globalThis.DOMParser = MockDOMParser as any;
     }
 }
 

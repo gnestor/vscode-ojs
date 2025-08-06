@@ -27,7 +27,7 @@ export class HTMLNotebookDetector {
         }
 
         // Check for Observable-specific script types
-        const scriptTypePattern = /<script[^>]+type\s*=\s*["']?(text\/markdown|observablejs|module)["']?[^>]*>/gi;
+        const scriptTypePattern = /<script[^>]+type\s*=\s*["']?(module|text\/markdown|text\/html|application\/sql|application\/x-tex|text\/vnd\.graphviz|application\/vnd\.observable\.javascript)["']?[^>]*>/gi;
         const hasObservableScripts = scriptTypePattern.test(content);
 
         return hasObservableScripts;
